@@ -1,0 +1,10 @@
+test_alloc
+test_asan
+bench
+
+*.o
+*.d
+build/
+
+.DS_Store
+.vscode/
