@@ -1,0 +1,113 @@
+// bench.cpp — Stage 1.4 benchmark harness
+// CSV rows -> stdout:  implementation,size,run,seconds,gflops
+// Progress, mismatches, checksums -> stderr (so `./bench > results.csv` stays clean)
+
+#include <chrono>
+#include <cstdio>
+#include <cstring>
+#include <random>
+
+#include "alloc.hpp"
+#include "check.hpp"
+#include "gemm.h"   // kernel declarations + the Kernel pointer type
+
+struct Impl {
+    const char* name;  // goes in the CSV "implementation" column
+    Kernel fn;
+};
+
+static const Impl IMPLS[] = {
+    {"naive_ijk", matmul_naive},
+    // {"ikj", matmul_ikj},
+#ifdef GEMM_HAVE_BLAS
+    {"blas", matmul_blas},
+#endif
+};
+
+static const int SIZES[] = {128, 256, 512, 1024, 2048};
+constexpr int REPS = 5;
+
+// Deterministic values in [-1, 1).
+//   std::mt19937 rng(seed);
+//   std::uniform_real_distribution<float> dist(-1.0f, 1.0f);   // dist(rng) -> one float
+static void fill_random(float* X, int rows, int cols, int ld, unsigned seed) {
+    std::mt19937 rng(seed);                                   // same seed -> same sequence every run, so results are reproducible
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);  // small, signed values: sums stay well-scaled and cancellation gets exercised
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < cols; c++) {
+            X[idx(r, c, ld)] = dist(rng);                     // row-major walk -> sequential writes; ld (not cols) is the row stride
+        }
+    }
+}
+
+// Seconds for ONE call of fn.
+// Zero C BEFORE t0 — makes the harness correct for Stage 2+ kernels that accumulate (C += ...).
+//   auto t0 = std::chrono::steady_clock::now();
+//   double s = std::chrono::duration<double>(t1 - t0).count();
+static double time_one(Kernel fn, const float* A, const float* B, float* C, int n) {
+    std::memset(C, 0, sizeof(float) * n * n);           // reset C outside the timed region; all-zero bits == 0.0f
+    auto t0 = std::chrono::steady_clock::now();         // steady_clock: monotonic, never jumps if the wall clock is adjusted
+    fn(A, B, C, n, n, n, n, n, n);                      // square, tightly packed: M = N = K = lda = ldb = ldc = n
+    auto t1 = std::chrono::steady_clock::now();
+    return std::chrono::duration<double>(t1 - t0).count();  // duration<double> defaults to seconds, keeps sub-ns precision
+}
+
+// 2*n^3 flops (one mul + one add per inner-loop iteration).
+// Compute in double — 2048^3 = 8.6e9 overflows a 32-bit int.
+static double gflops(int n, double seconds) {
+    double nd = static_cast<double>(n);        // convert first, so n*n*n is done in double, never in int
+    double flops = 2.0 * nd * nd * nd;         // n^3 inner iterations x (1 mul + 1 add)
+    return flops / seconds / 1e9;              // flops per second, scaled to giga
+}
+
+int main() {
+    std::printf("implementation,size,run,seconds,gflops\n");
+
+    for (int n : SIZES) {
+        // Square matrices, tightly packed: ld = n
+        float* A     = alloc_matrix(n, n);
+        float* B     = alloc_matrix(n, n);
+        float* C     = alloc_matrix(n, n);
+        float* C_ref = alloc_matrix(n, n);
+        if (!A || !B || !C || !C_ref) {                         // posix_memalign failed (2048^2 floats = 16 MB each)
+            std::fprintf(stderr, "alloc failed at n=%d\n", n);
+            return 1;                                           // free(nullptr) is a no-op, but just exit; the OS reclaims the rest
+        }
+
+        // Different seeds -> A != B, so a kernel that swaps or transposes operands gives a wrong answer and gets caught
+        fill_random(A, n, n, n, 1u);
+        fill_random(B, n, n, n, 2u);
+
+        // Reference answer: naive kernel, computed once, not timed. time_one also zeroes C_ref first.
+        time_one(matmul_naive, A, B, C_ref, n);
+        std::fprintf(stderr, "n=%d: reference computed\n", n);
+
+        for (const Impl& impl : IMPLS) {
+            // Correctness gate + warmup in one call: warms caches/TLB, faults in pages, and checks the answer.
+            // The time is thrown away.
+            time_one(impl.fn, A, B, C, n);
+            if (!matrices_match(C_ref, C, n, n, n, /*K=*/n)) {  // K = n accumulations per output cell -> tolerance scale
+                std::fprintf(stderr, "%s n=%d: MISMATCH, skipping timing\n", impl.name, n);
+                continue;                                       // never write timing rows for a wrong kernel
+            }
+
+            // Timed runs: one CSV row each. Keep every run (not just the min/median) so the analysis can pick later.
+            for (int run = 0; run < REPS; run++) {
+                double s = time_one(impl.fn, A, B, C, n);
+                std::printf("%s,%d,%d,%.9f,%.4f\n", impl.name, n, run, s, gflops(n, s));
+            }
+
+            // Checksum of the last run's C. Printing it makes the result observable, so the
+            // optimizer can't prove the kernel's writes are unused and delete the calls.
+            double checksum = 0.0;                              // double: summing 4M floats in float would lose precision
+            for (int i = 0; i < n * n; i++) checksum += C[i];
+            std::fprintf(stderr, "%s n=%d: checksum=%.6f\n", impl.name, n, checksum);
+        }
+
+        free_matrix(A);
+        free_matrix(B);
+        free_matrix(C);
+        free_matrix(C_ref);
+    }
+    return 0;
+}

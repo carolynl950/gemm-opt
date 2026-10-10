@@ -59,15 +59,16 @@ bool t3() {
     float* test = alloc_matrix(1, 1);
     ref[idx(0, 0, 1)] = fwd;
     test[idx(0, 0, 1)] = bwd;
-    bool ok = matrices_match(ref, test, 1, 1, 1, 1);
+    bool ok = matrices_match(ref, test, 1, 1, 1, K);
     free_matrix(ref);
     free_matrix(test);
     return ok;
 }
 
 int main() {
-    printf("test 1 (identical):   %s\n", t1()  ? "PASS" : "FAIL");
-    printf("test 2 (corrupted):   %s\n", !t2()   ? "PASS" : "FAIL");
-    printf("test 3 (reordered):   %s\n", t3()  ? "PASS" : "FAIL");
-    return 0;
+    bool p1 = t1(), p2 = !t2(), p3 = t3();
+    printf("test 1 (identical):   %s\n", p1 ? "PASS" : "FAIL");
+    printf("test 2 (corrupted):   %s\n", p2 ? "PASS" : "FAIL");
+    printf("test 3 (reordered):   %s\n", p3 ? "PASS" : "FAIL");
+    return (p1 && p2 && p3) ? 0 : 1;   // nonzero exit is how CTest/CI sees a failure
 }

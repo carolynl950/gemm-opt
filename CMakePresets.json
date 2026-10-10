@@ -1,0 +1,34 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "release",
+      "displayName": "Release (-O3, native)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "asan",
+      "displayName": "AddressSanitizer",
+      "inherits": "release",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "GEMM_SANITIZER": "address" }
+    },
+    {
+      "name": "ubsan",
+      "displayName": "UndefinedBehaviorSanitizer",
+      "inherits": "release",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "GEMM_SANITIZER": "undefined" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "release", "configurePreset": "release" },
+    { "name": "asan",    "configurePreset": "asan" },
+    { "name": "ubsan",   "configurePreset": "ubsan" }
+  ],
+  "testPresets": [
+    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
+    { "name": "asan",    "configurePreset": "asan",    "output": { "outputOnFailure": true } },
+    { "name": "ubsan",   "configurePreset": "ubsan",   "output": { "outputOnFailure": true } }
+  ]
+}
