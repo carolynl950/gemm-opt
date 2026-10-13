@@ -10,35 +10,12 @@
 #include "alloc.hpp"
 #include "check.hpp"
 #include "gemm.h"   // kernel declarations + the Kernel pointer type
+#include "kernels.hpp"
 
-struct Impl {
-    const char* name;  // goes in the CSV "implementation" column
-    Kernel fn;
-};
-
-static const Impl IMPLS[] = {
-    {"naive_ijk", matmul_naive},
-    // {"ikj", matmul_ikj},
-#ifdef GEMM_HAVE_BLAS
-    {"blas", matmul_blas},
-#endif
-};
 
 static const int SIZES[] = {128, 256, 512, 1024, 2048};
 constexpr int REPS = 5;
 
-// Deterministic values in [-1, 1).
-//   std::mt19937 rng(seed);
-//   std::uniform_real_distribution<float> dist(-1.0f, 1.0f);   // dist(rng) -> one float
-static void fill_random(float* X, int rows, int cols, int ld, unsigned seed) {
-    std::mt19937 rng(seed);                                   // same seed -> same sequence every run, so results are reproducible
-    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);  // small, signed values: sums stay well-scaled and cancellation gets exercised
-    for (int r = 0; r < rows; r++) {
-        for (int c = 0; c < cols; c++) {
-            X[idx(r, c, ld)] = dist(rng);                     // row-major walk -> sequential writes; ld (not cols) is the row stride
-        }
-    }
-}
 
 // Seconds for ONE call of fn.
 // Zero C BEFORE t0 — makes the harness correct for Stage 2+ kernels that accumulate (C += ...).
