@@ -270,6 +270,23 @@ Full write-up: `results/stage4_omp.md`.
 
 ---
 
+## Stage 5a/5b/5c — CUDA naive, coalesced, shared memory on T4 (in progress)
+
+**Why 5b is faster:** mapping a warp's 32 threads to consecutive columns
+makes each warp load of B 4 contiguous transactions instead of a scatter:
+61 → 502–652 GFLOPS (8–12×), same arithmetic.
+
+- T4 is **power-limited**: cuBLAS sustains ~3.3–3.6 TFLOPS under the 70 W
+  cap (clock log shows reason 0x4); an earlier 7,000 was a pre-cap burst.
+- GPU decode is bandwidth-bound too: cuBLAS 138–212 GB/s of ~320 spec.
+- 5c shared-memory tiling: 1.3–1.5× coalesced (~880–985 GFLOPS, 17–25% of
+  cuBLAS), not 32×: bottleneck moves to 2 shared loads per FMA. Slower than
+  coalesced in decode (nothing to reuse at M = 1).
+
+Full write-up: `results/stage5_cuda.md`.
+
+---
+
 ## Next
 - Stage 3 x86: AVX2 micro-kernel
 - 2-D (ic × jr) thread grid to get past the ~440 GFLOPS plateau
