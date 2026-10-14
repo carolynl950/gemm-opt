@@ -20,6 +20,7 @@ static const Shape SHAPES[] = {
     {1, 2304, 768},                                                    // decode-shaped (M = 1)
     {65, 1, 31}, {65, 31, 1},                                          // N = 1, K = 1
     {128, 128, 128}, {257, 255, 129},                                  // around 64/128-wide block tiles
+    {129, 127, 9}, {256, 384, 17},                                     // regtile: partial 128-tiles, K not a multiple of 8
 };
 
 static const int PAD = 3;   // extra columns per row; odd so rows aren't aligned

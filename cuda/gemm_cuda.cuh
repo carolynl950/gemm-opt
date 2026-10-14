@@ -35,6 +35,10 @@ void cuda_coalesced(const float* A, const float* B, float* C,
 void cuda_smem(const float* A, const float* B, float* C,
                int M, int N, int K, int lda, int ldb, int ldc);
 
+// Stage 5d: register tiling — each thread computes an 8x8 patch of C from registers.
+void cuda_regtile(const float* A, const float* B, float* C,
+                  int M, int N, int K, int lda, int ldb, int ldc);
+
 // cuBLAS SGEMM: the ceiling to compare against (NVIDIA's tuned library).
 void cuda_cublas(const float* A, const float* B, float* C,
                  int M, int N, int K, int lda, int ldb, int ldc);
@@ -49,5 +53,6 @@ inline constexpr CudaImpl CUDA_IMPLS[] = {
     {"cuda_naive", cuda_naive},
     {"cuda_coalesced", cuda_coalesced},
     {"cuda_smem", cuda_smem},
+    {"cuda_regtile", cuda_regtile},
     {"cublas", cuda_cublas},
 };
