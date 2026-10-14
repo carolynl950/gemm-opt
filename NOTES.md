@@ -245,9 +245,17 @@ Full write-up: `results/peak_fma.md`.
 
 ---
 
+## Small-M dispatch (done)
+
+Measured simd vs ikj over M = 1..64 (QKV, cold): crossover exactly at
+M = 8 = MR. `matmul_simd` now calls ikj for M < 8: decode 3.5–4.3 →
+27–30 GFLOPS. Weak spot left at M = 9–11 (one full tile + a mostly-empty
+edge tile). Full write-up: `results/stage3_dispatch.md`.
+
+---
+
 ## Next
 - CI: Ubuntu + macOS × release/asan/ubsan
-- Small-M dispatch (simd → ikj/GEMV when M < MR)
 - Stage 3 x86: AVX2 micro-kernel
 - Stage 4: OpenMP; re-measure decode bandwidth wall with multiple threads
 - Counter confirmation of the set-conflict and prefetcher hypotheses

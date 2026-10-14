@@ -43,18 +43,18 @@ On Apple silicon the BLAS reference is Accelerate, which uses the AMX matrix uni
 
 GPT-2-small layer shapes (d=768, MLP=3072), prefill (T=512) and decode (T=1), single thread on M4 Pro. Decode is measured **cold** (caches flushed before each run), since a real model's weights don't fit in cache. Full analysis: [results/transformer_shapes.md](results/transformer_shapes.md).
 
-| Layer | Shape (M×K · K×N) | Prefill: packed | Prefill: simd | Prefill: Accelerate | Decode: ikj | Decode: simd | Decode: Accelerate |
+| Layer | Shape (M×K · K×N) | Prefill: packed | Prefill: simd | Prefill: Accelerate | Decode: ikj | Decode: simd (M<8 → ikj) | Decode: Accelerate |
 |---|---|---|---|---|---|---|---|
-| QKV projection | T×768 · 768×2304 | 42.3 | 113.3 | 3198 | 30.2 | 4.2 | 44.9 |
-| Attention out | T×768 · 768×768 | 40.3 | 115.6 | 1599 | 29.9 | 3.6 | 44.6 |
-| MLP up | T×768 · 768×3072 | 42.5 | 114.0 | 2425 | 30.6 | 4.3 | 45.0 |
-| MLP down | T×3072 · 3072×768 | 43.2 | 112.6 | 2240 | 30.3 | 3.5 | 44.2 |
+| QKV projection | T×768 · 768×2304 | 42.3 | 113.3 | 3198 | 30.2 | 27.3 | 44.9 |
+| Attention out | T×768 · 768×768 | 40.3 | 115.6 | 1599 | 29.9 | 29.5 | 44.6 |
+| MLP up | T×768 · 768×3072 | 42.5 | 114.0 | 2425 | 30.6 | 30.4 | 45.0 |
+| MLP down | T×3072 · 3072×768 | 43.2 | 112.6 | 2240 | 30.3 | 29.7 | 44.2 |
 
 GFLOPS, median.
 
 - **Prefill** reuses each weight 512 times (~135 flops/byte): compute-bound. Packing beats ikj by ~30%, and fixes MLP up, where N=3072 gives a 12 KB row stride that makes plain blocking slower than ikj.
 - **Decode** uses each weight once (0.5 flops/byte). Accelerate streams weights at 88–90 GB/s on every layer and lands at exactly 0.5 × 90 = 45 GFLOPS: it's on the bandwidth roofline. Its lead over ikj collapses from ~70× (prefill) to ~1.5×.
-- **The register-blocked simd kernel is 2.7× packed in prefill but 7–8× slower than ikj in decode**: with M=1 it fills 1 of 8 tile rows and packs all of B every call. Small M needs a GEMV path, not a GEMM kernel.
+- **The register-blocked simd kernel is 2.7× packed in prefill, but at M=1 it was 7–8× slower than ikj** (fills 1 of 8 tile rows, packs all of B every call). A measured crossover at exactly M=8 (the tile height) now sends M<8 to ikj: decode went from ~4 to ~30 GFLOPS ([dispatch](results/stage3_dispatch.md)).
 - **Blocking and packing hurt decode** (2.5–3.5× slower than ikj): with T=1 there's nothing to reuse a packed tile for, so the copy just adds memory traffic. The right kernel depends on the phase.
 
 ## Repo layout

@@ -113,6 +113,8 @@ Measured with `src/peak.cpp` (see `peak_fma.md`): one P-core sustains
      add-back, every time.
   3. **B is packed every call**, which reads and writes all of B before
      computing, the same 3× memory traffic that sank packed in decode.
+- **Follow-up done:** `stage3_dispatch.md`. Measured crossover is exactly
+  M = 8; M < 8 now calls ikj, decode 3.5–4.3 → 27–30 GFLOPS.
 - The fix is **dispatch, not tuning**: for small M, call a GEMV-style kernel
   (ikj already is one: ~30 GFLOPS, 60 GB/s, close to the ~45 GFLOPS
   bandwidth roofline). Production BLAS libraries do the same.

@@ -127,6 +127,10 @@ static void micro_kernel_edge(int kc, const float* Ap, const float* Bp,
 void matmul_simd(const float* A, const float* B, float* C,
                  int M, int N, int K, int lda, int ldb, int ldc) {
     if (M <= 0 || N <= 0 || K <= 0) return;
+    // Small-M dispatch: with fewer rows than the 8-row tile, most FMAs hit zero padding and
+    // packing B costs as much as using it. Measured crossover (QKV shape, cold, see
+    // results/stage3_dispatch.md): ikj wins for M < 8, simd wins from M = 8.
+    if (M < MR) { matmul_ikj(A, B, C, M, N, K, lda, ldb, ldc); return; }
     // Buffers sized for the largest block this call will actually use (small for decode shapes).
     const int kc_max = std::min(K, KC);
     float* Ap = alloc_matrix(round_up(std::min(M, MC), MR), kc_max);
