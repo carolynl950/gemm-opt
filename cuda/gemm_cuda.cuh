@@ -31,6 +31,10 @@ void cuda_naive(const float* A, const float* B, float* C,
 void cuda_coalesced(const float* A, const float* B, float* C,
                     int M, int N, int K, int lda, int ldb, int ldc);
 
+// Stage 5c: shared-memory tiling (32x32 tiles of A and B reused 32x from shared memory).
+void cuda_smem(const float* A, const float* B, float* C,
+               int M, int N, int K, int lda, int ldb, int ldc);
+
 // cuBLAS SGEMM: the ceiling to compare against (NVIDIA's tuned library).
 void cuda_cublas(const float* A, const float* B, float* C,
                  int M, int N, int K, int lda, int ldb, int ldc);
@@ -44,5 +48,6 @@ struct CudaImpl {
 inline constexpr CudaImpl CUDA_IMPLS[] = {
     {"cuda_naive", cuda_naive},
     {"cuda_coalesced", cuda_coalesced},
+    {"cuda_smem", cuda_smem},
     {"cublas", cuda_cublas},
 };

@@ -129,6 +129,7 @@ if(GEMM_USE_CUDA)
             cuda/cublas_ref.cu
             cuda/kernels/naive.cu
             cuda/kernels/coalesced.cu
+            cuda/kernels/smem.cu
         )
         target_include_directories(gemm_cuda PUBLIC cuda)
         target_link_libraries(gemm_cuda PUBLIC CUDA::cudart CUDA::cublas)
