@@ -217,8 +217,27 @@ Full write-up: `results/transformer_shapes.md`.
 
 ---
 
+## Stage 3 — NEON register-blocked micro-kernel (done on M4; AVX2 pending)
+
+**Why it's faster:** an 8 × 12 tile of C stays in 24 NEON registers for the
+whole k loop, so each step loads 20 floats for 96 FMAs instead of 3 memory
+ops per FMA: ~115 GFLOPS, 2.8× packed, 47× naive at 1024, ~80% of an
+*estimated* 144 GFLOPS single-core peak.
+
+- Prefill: ~113–116 on every GPT-2 layer.
+- Decode: 3.5–4.3, **worst of all kernels**: M = 1 wastes 7/8 of the tile
+  and packs B every call. Needs small-M dispatch to a GEMV path.
+- Negative control lesson: removing pack zero-fill isn't a correctness bug
+  (padded lanes only reach discarded columns).
+
+Full write-up: `results/stage3_simd.md`.
+
+---
+
 ## Next
 - CI: Ubuntu + macOS × release/asan/ubsan
-- Stage 3: register-blocked NEON micro-kernel (M4) / AVX2 (x86)
+- Measure true single-core FMA peak (microbenchmark) before quoting % of peak
+- Small-M dispatch (simd → ikj/GEMV when M < MR)
+- Stage 3 x86: AVX2 micro-kernel
 - Stage 4: OpenMP; re-measure decode bandwidth wall with multiple threads
 - Counter confirmation of the set-conflict and prefetcher hypotheses

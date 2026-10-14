@@ -13,6 +13,7 @@ inline constexpr Impl IMPLS[] = { //inline gives one shared def
     {"ikj", matmul_ikj},
     {"blocked", matmul_blocked},
     {"packed", matmul_packed},
+    {"simd", matmul_simd},
 #ifdef GEMM_HAVE_BLAS
     {"blas", matmul_blas},
 #endif

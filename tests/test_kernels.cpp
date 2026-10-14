@@ -29,6 +29,11 @@ static const Shape SHAPES[] = {
     {64, 256, 64},    // exact multiples: one full block each way, no remainder
     {65, 257, 65},    // one past every block edge: remainder of 1 in all three loops
     {128, 512, 128},  // two full blocks each way: block loops actually iterate
+
+    // simd block edges (MR=8, NR=12, MC=128, KC=256, NC=1536)
+    {8, 12, 7},       // exactly one register tile
+    {9, 13, 300},     // one past MR and NR; K crosses KC
+    {33, 1537, 257},  // N crosses NC, K crosses KC, partial tiles everywhere
 };
 
 // Second pass for blocked/packed with tiny, mutually prime tiles, so nearly every

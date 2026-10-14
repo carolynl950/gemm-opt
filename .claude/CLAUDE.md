@@ -35,9 +35,9 @@ Style:
 
 ## Current status
 
-- Done: infrastructure (CMake presets incl. `novec`, `test_kernels` with magnitude-based tolerance, bench CLI with `--shape`/`--cold`, CI), Stage 0 naive, Stage 1 `ikj`, Stage 2a blocked, Stage 2b packed, transformer prefill/decode sweep. Each has a write-up in `results/*.md`.
-- Next: Stage 3 register-blocked micro-kernel (NEON on M4, AVX2 on x86) → Stage 4 OpenMP (re-measure decode bandwidth wall) → x86 numbers → counter confirmation of the set-conflict / prefetcher hypotheses
-- Open decisions: NEON stage on M4 or AVX2-only? Mac counter tool for Stages 0–2 (Instruments/xctrace) or x86-only attribution?
+- Done: infrastructure (CMake presets incl. `novec`, `test_kernels` with magnitude-based tolerance, bench CLI with `--shape`/`--cold`, CI), Stage 0 naive, Stage 1 `ikj`, Stage 2a blocked, Stage 2b packed, transformer prefill/decode sweep, Stage 3 NEON micro-kernel (`simd`). Each has a write-up in `results/*.md`.
+- Next: FMA-peak microbenchmark → small-M dispatch → Stage 4 OpenMP (re-measure decode bandwidth wall) → Stage 3 AVX2 on x86 → x86 numbers → counter confirmation of the set-conflict / prefetcher hypotheses
+- Decided: Stage 3 is NEON on M4 first, AVX2 later. Open: Mac counter tool (Instruments/xctrace) or x86-only attribution?
 
 Update this section as stages finish.
 

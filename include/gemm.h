@@ -32,6 +32,10 @@ void matmul_packed(const float* A, const float* B, float* C,
 // Set blocked's and packed's tile sizes (values <= 0 leave that size unchanged). Not thread-safe.
 void set_block_sizes(int mc, int kc, int nc);
 
+// Stage 3: packed A and B + 8x12 register-blocked micro-kernel (NEON on arm64, plain C++ elsewhere).
+void matmul_simd(const float* A, const float* B, float* C,
+                 int M, int N, int K, int lda, int ldb, int ldc);
+
 #ifdef GEMM_HAVE_BLAS
 // Vendor BLAS (Accelerate on macOS, OpenBLAS on Linux) — the ceiling to compare against.
 void matmul_blas(const float* A, const float* B, float* C,

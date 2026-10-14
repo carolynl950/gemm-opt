@@ -15,7 +15,7 @@ Matrix multiply dominates ML training and inference. Every transformer layer is 
 | 0 | `naive` (ijk) | Textbook triple loop; correctness reference | Done |
 | 1 | `ikj` | Loop reorder so the inner loop streams B and C rows contiguously | Done ([analysis](results/stage1_ikj.md)) |
 | 2 | `blocked` | Cache blocking (tiling) with runtime block size and remainder handling | Done: [2a blocking](results/stage2_blocked.md), [2b packing](results/stage2b_packed.md) |
-| 3 | `simd` | AVX2 (x86-64) vectorized micro-kernel | Planned |
+| 3 | `simd` | Packed A + B, 8×12 register-blocked micro-kernel: NEON (M4) done, AVX2 (x86-64) planned | NEON done ([analysis](results/stage3_simd.md)) |
 | 4 | `omp` | OpenMP multithreading over blocks | Planned |
 | — | `blas` | Vendor BLAS reference ceiling (Accelerate on macOS, OpenBLAS on Linux) | Wired up |
 
@@ -31,7 +31,7 @@ Each stage records its mechanism (one sentence: *why* it's faster) and its measu
 | ikj | 32.7 | 13.4× | [X] (split measured: ~3.2× access pattern × ~4.2× SIMD) |
 | blocked (64/64/256) | 29.6 | 12.1× | [X] (slower than ikj at 1024: power-of-two set conflicts; +34% at n=1000) |
 | packed (64/64/256) | 41.9 | 17.2× | [X] (packing removes the power-of-two cliff) |
-| simd | [X] | [X]× | [X] |
+| simd (NEON 8×12) | 115.3 | 47× | [X] (~0.2 memory ops per FMA vs 3 in Stages 1–2) |
 | omp | [X] | [X]× | [X] |
 | BLAS (Accelerate, AMX) | 2164 | 887× | — |
 
@@ -43,17 +43,18 @@ On Apple silicon the BLAS reference is Accelerate, which uses the AMX matrix uni
 
 GPT-2-small layer shapes (d=768, MLP=3072), prefill (T=512) and decode (T=1), single thread on M4 Pro. Decode is measured **cold** (caches flushed before each run), since a real model's weights don't fit in cache. Full analysis: [results/transformer_shapes.md](results/transformer_shapes.md).
 
-| Layer | Shape (M×K · K×N) | Prefill: packed | Prefill: Accelerate | Decode: ikj | Decode: packed | Decode: Accelerate |
-|---|---|---|---|---|---|---|
-| QKV projection | T×768 · 768×2304 | 42.3 | 3198 | 30.2 | 8.9 | 44.9 |
-| Attention out | T×768 · 768×768 | 40.3 | 1599 | 29.9 | 9.0 | 44.6 |
-| MLP up | T×768 · 768×3072 | 42.5 | 2425 | 30.6 | 8.2 | 45.0 |
-| MLP down | T×3072 · 3072×768 | 43.2 | 2240 | 30.3 | 8.6 | 44.2 |
+| Layer | Shape (M×K · K×N) | Prefill: packed | Prefill: simd | Prefill: Accelerate | Decode: ikj | Decode: simd | Decode: Accelerate |
+|---|---|---|---|---|---|---|---|
+| QKV projection | T×768 · 768×2304 | 42.3 | 113.3 | 3198 | 30.2 | 4.2 | 44.9 |
+| Attention out | T×768 · 768×768 | 40.3 | 115.6 | 1599 | 29.9 | 3.6 | 44.6 |
+| MLP up | T×768 · 768×3072 | 42.5 | 114.0 | 2425 | 30.6 | 4.3 | 45.0 |
+| MLP down | T×3072 · 3072×768 | 43.2 | 112.6 | 2240 | 30.3 | 3.5 | 44.2 |
 
 GFLOPS, median.
 
 - **Prefill** reuses each weight 512 times (~135 flops/byte): compute-bound. Packing beats ikj by ~30%, and fixes MLP up, where N=3072 gives a 12 KB row stride that makes plain blocking slower than ikj.
 - **Decode** uses each weight once (0.5 flops/byte). Accelerate streams weights at 88–90 GB/s on every layer and lands at exactly 0.5 × 90 = 45 GFLOPS: it's on the bandwidth roofline. Its lead over ikj collapses from ~70× (prefill) to ~1.5×.
+- **The register-blocked simd kernel is 2.7× packed in prefill but 7–8× slower than ikj in decode**: with M=1 it fills 1 of 8 tile rows and packs all of B every call. Small M needs a GEMV path, not a GEMM kernel.
 - **Blocking and packing hurt decode** (2.5–3.5× slower than ikj): with T=1 there's nothing to reuse a packed tile for, so the copy just adds memory traffic. The right kernel depends on the phase.
 
 ## Repo layout
