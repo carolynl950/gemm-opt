@@ -31,11 +31,35 @@ inline bool matrices_match(const float* ref, const float* test,
             //                  get a tolerance of 0 and fail on any difference
             float tol = K * FLT_EPSILON * std::fabs(ref[i]) + 1e-6f;
 
-            if (std::fabs(ref[i] - test[i]) > tol) {
+            // !(diff <= tol), not (diff > tol): every comparison with NaN is false, so the
+            // naive form would PASS a NaN result. This form fails it.
+            if (!(std::fabs(ref[i] - test[i]) <= tol)) {
                 printf("mismatch at (%d, %d): ref=%g test=%g diff=%g tol=%g\n",
                        r, c, ref[i], test[i],
                        std::fabs(ref[i] - test[i]), tol);
                 return false;   // stop at first failure
+            }
+        }
+    }
+    return true;
+}
+
+// Same comparison, but tolerance scales with the magnitudes that were SUMMED,
+// not with the result. Correct under cancellation: when terms of size ~1 cancel
+// to ~0.003, |ref| underestimates the rounding error by ~1000x.
+//   scale[i] = |C0| + sum_k |a_ik| * |b_kj|   (caller computes it; same ld as ref)
+inline bool matrices_match_bound(const float* ref, const float* test, const float* scale,
+                                 int rows, int cols, int ld, int K) {
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < cols; c++) {
+            int i = idx(r, c, ld);
+            float tol = K * FLT_EPSILON * scale[i] + 1e-6f;
+
+            if (!(std::fabs(ref[i] - test[i]) <= tol)) {   // NaN-safe, as above
+                printf("mismatch at (%d, %d): ref=%g test=%g diff=%g tol=%g scale=%g\n",
+                       r, c, ref[i], test[i],
+                       std::fabs(ref[i] - test[i]), tol, scale[i]);
+                return false;
             }
         }
     }

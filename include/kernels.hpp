@@ -1,4 +1,5 @@
 #pragma once
+#include "alloc.hpp"   // idx(), used by fill_random
 #include "gemm.h"
 #include <random>
 
@@ -7,7 +8,7 @@ struct Impl {
     Kernel fn;
 };
 
-inline constexpr Impl IMPLS[] = { //inline gives one shared def?
+inline constexpr Impl IMPLS[] = { //inline gives one shared def
     {"naive_ijk", matmul_naive},
     // {"ikj", matmul_ikj},
 #ifdef GEMM_HAVE_BLAS

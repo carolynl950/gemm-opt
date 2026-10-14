@@ -72,10 +72,89 @@ garbage at small K.
    since ref is 0)
 3. same sum, reversed order → pass
 
+### Bug: NaN slipped through the checker
+`fabs(ref - test) > tol` is **false** when `test` is NaN, because every
+comparison with NaN is false. So a NaN result passed. Changed to
+`!(fabs(ref - test) <= tol)`, which fails on NaN.
+
+---
+
+## Step 1.6 — all-kernels correctness test (`tests/test_kernels.cpp`)
+
+Every kernel in `IMPLS` vs naive, on shapes built to break it:
+
+| Case | Catches |
+|---|---|
+| awkward sizes 1, 7, 63, 65, 129 | remainder-loop bugs (Stage 2+ blocking, SIMD) |
+| M≠N≠K | swapped loop bounds, invisible on square |
+| M=1 / N=1 / K=1 | degenerate edges; M=1 is decode |
+| padded strides (`ld = width + 3`) | kernel uses `N` where it should use `ldb` |
+| C starts random, not zero | kernel does `C = A·B` instead of `C += A·B` |
+
+**NaN poisoning.** Every buffer is filled with NaN before the logical part
+gets random values. After the kernel runs, padding must still be NaN:
+- kernel **writes** padding → `padding_intact` fails
+- kernel **reads** padding → NaN propagates into results → `matrices_match`
+  fails (only after the NaN fix above)
+
+Kernel list lives in `include/kernels.hpp`, shared with `bench.cpp`, so a
+kernel can't be benchmarked without also being tested.
+
+### Finding: `|ref|`-relative tolerance fails under cancellation
+First run: 19/20 pass. Failure is BLAS (Accelerate) vs naive at 129×129×129:
+
+```
+mismatch at (19, 47): ref=0.00332272 test=0.0033215 diff=1.21724e-06 tol=1.0511e-06
+```
+
+Neither kernel is wrong. The tolerance is wrong for this element.
+
+- Tolerance scales with `|ref|`, the size of the **answer**.
+- Rounding error scales with the size of the **terms being added**. Inputs
+  are in [-1, 1), so the 129 products and the running sums are O(1).
+- Here they cancel to 0.0033. The summed magnitudes at that element are
+  34.5 (measured, see below): the answer is ~10,000× smaller than what was
+  added, so the tolerance was ~10,000× too tight.
+- Naive vs naive never hits this (same order, bit-identical). BLAS sums in a
+  different order (blocking, FMA), so the rounding differs.
+
+**Principled bound** (standard dot-product error analysis):
+
+```
+|error| ≤ K · ε · ( |C₀| + Σₖ |a_ik| · |b_kj| )
+```
+
+Scale by the magnitudes that were summed, not by the result. Computable
+with one extra naive call on `|A|`, `|B|`, `|C₀|`.
+
+Not fixed by raising the constant: that would also hide real bugs on large
+values.
+
+**Fix.** `matrices_match_bound` in `check.hpp` takes a per-element `scale`
+matrix. `test_kernels` computes it as `naive(|A|, |B|, |C₀|)`: naive does
+`C += A·B`, so seeding with `|C₀|` gives the formula exactly. All terms ≥ 0,
+so `scale` itself can't cancel.
+
+**Result.** 20/20 on release, asan, ubsan.
+
+| at element (19, 47), 129³, BLAS | value |
+|---|---|
+| ref | 0.00332272 |
+| scale (Σ magnitudes) | 34.4753 |
+| old tol (`K·ε·|ref|`) | 1.05e-6 |
+| new tol (`K·ε·scale`) | ~5.3e-4 |
+| actual diff | 1.22e-6 |
+
+**Still strict?** Injected `+1e-3` into one C element after the kernel:
+0/20 pass. Caught on every shape.
+
+**Caveat.** `K·ε` is the *worst-case* bound (every rounding error same
+sign). Observed diff is ~400× under it. Real errors behave more like
+random walk, ~√K·ε. So the test can't catch errors smaller than about
+K·ε·scale; that's the price of never rejecting a correct kernel.
+
 ---
 
 ## Next
-- 1.3 — Stage 0 naive `ijk`. Watch for the compiler deleting the
-  computation if nothing reads C.
-- 1.4 — benchmark harness (warmup discarded, multiple reps, CSV out)
-- 1.5 — baseline + `-fopt-info-vec` auto-vectorization check (x86 only)
+- Stage 1 `ikj`
+- Bench CLI (`--impl --m --n --k --reps`)

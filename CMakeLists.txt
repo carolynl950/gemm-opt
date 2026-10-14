@@ -69,7 +69,7 @@ target_link_libraries(bench PRIVATE gemm)
 # ---- tests -------------------------------------------------------------------
 enable_testing()
 
-foreach(t test_alloc test_check test_naive)
+foreach(t test_alloc test_check test_naive test_kernels)
     add_executable(${t} tests/${t}.cpp)
     target_link_libraries(${t} PRIVATE gemm)
     # Release adds -DNDEBUG, which deletes assert(). Tests must keep their asserts.
