@@ -41,15 +41,20 @@ On Apple silicon the BLAS reference is Accelerate, which uses the AMX matrix uni
 
 ### Transformer workloads
 
-Benchmarked on GPT-2-small layer shapes (d=768, MLP=3072), for prefill (T=512) and decode (T=1):
+GPT-2-small layer shapes (d=768, MLP=3072), prefill (T=512) and decode (T=1), single thread on M4 Pro. Decode is measured **cold** (caches flushed before each run), since a real model's weights don't fit in cache. Full analysis: [results/transformer_shapes.md](results/transformer_shapes.md).
 
-| Layer | Shape (M×K · K×N) | Prefill GFLOPS | Decode GFLOPS |
-|---|---|---|---|
-| QKV projection | T×768 · 768×2304 | [X] | [X] |
-| MLP up | T×768 · 768×3072 | [X] | [X] |
-| MLP down | T×3072 · 3072×768 | [X] | [X] |
+| Layer | Shape (M×K · K×N) | Prefill: packed | Prefill: Accelerate | Decode: ikj | Decode: packed | Decode: Accelerate |
+|---|---|---|---|---|---|---|
+| QKV projection | T×768 · 768×2304 | 42.3 | 3198 | 30.2 | 8.9 | 44.9 |
+| Attention out | T×768 · 768×768 | 40.3 | 1599 | 29.9 | 9.0 | 44.6 |
+| MLP up | T×768 · 768×3072 | 42.5 | 2425 | 30.6 | 8.2 | 45.0 |
+| MLP down | T×3072 · 3072×768 | 43.2 | 2240 | 30.3 | 8.6 | 44.2 |
 
-Prefill is compute-bound, so blocking and SIMD pay off. Decode (T=1) is effectively matrix-vector and memory-bandwidth-bound, so cache blocking barely helps. [Fill in the measured explanation.]
+GFLOPS, median.
+
+- **Prefill** reuses each weight 512 times (~135 flops/byte): compute-bound. Packing beats ikj by ~30%, and fixes MLP up, where N=3072 gives a 12 KB row stride that makes plain blocking slower than ikj.
+- **Decode** uses each weight once (0.5 flops/byte). Accelerate streams weights at 88–90 GB/s on every layer and lands at exactly 0.5 × 90 = 45 GFLOPS: it's on the bandwidth roofline. Its lead over ikj collapses from ~70× (prefill) to ~1.5×.
+- **Blocking and packing hurt decode** (2.5–3.5× slower than ikj): with T=1 there's nothing to reuse a packed tile for, so the copy just adds memory traffic. The right kernel depends on the phase.
 
 ## Repo layout
 

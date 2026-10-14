@@ -202,5 +202,23 @@ Full write-up: `results/stage2b_packed.md`.
 
 ---
 
+## Transformer shapes — prefill vs decode (done)
+
+**Takeaway:** prefill (~135 flop/byte) is compute-bound and rewards
+blocking/packing; decode (0.5 flop/byte) is weight-bandwidth-bound. Cold
+decode caps Accelerate at 88–90 GB/s ≈ 45 GFLOPS on every layer, so its
+lead over ikj shrinks from ~70× to ~1.5×, and packing makes decode 3× worse.
+
+- MLP up (N = 3072, 12 KB stride) reproduces the Stage 2a blocked cliff on
+  a real model shape.
+- bench now has `--shape MxNxK`, `--cold`, and uses the bound check.
+
+Full write-up: `results/transformer_shapes.md`.
+
+---
+
 ## Next
-- Bench CLI (`--impl --m --n --k --reps`)
+- CI: Ubuntu + macOS × release/asan/ubsan
+- Stage 3: register-blocked NEON micro-kernel (M4) / AVX2 (x86)
+- Stage 4: OpenMP; re-measure decode bandwidth wall with multiple threads
+- Counter confirmation of the set-conflict and prefetcher hypotheses
