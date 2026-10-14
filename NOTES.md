@@ -221,8 +221,8 @@ Full write-up: `results/transformer_shapes.md`.
 
 **Why it's faster:** an 8 × 12 tile of C stays in 24 NEON registers for the
 whole k loop, so each step loads 20 floats for 96 FMAs instead of 3 memory
-ops per FMA: ~115 GFLOPS, 2.8× packed, 47× naive at 1024, ~80% of an
-*estimated* 144 GFLOPS single-core peak.
+ops per FMA: ~115 GFLOPS, 2.8× packed, 47× naive at 1024, **~85% of the
+measured ~135 GFLOPS** single-core peak (`results/peak_fma.md`).
 
 - Prefill: ~113–116 on every GPT-2 layer.
 - Decode: 3.5–4.3, **worst of all kernels**: M = 1 wastes 7/8 of the tile
@@ -234,9 +234,19 @@ Full write-up: `results/stage3_simd.md`.
 
 ---
 
+## Peak FMA microbenchmark (done)
+
+One P-core: **~135 GFLOPS** FP32, linear from 1 to 16 independent FMA
+chains (8.8 GFLOPS each), flat after. 16 in flight = latency × pipes.
+First version was wrong (`vfmaq_f32(y, acc, x)` forced a register copy
+per FMA → spills at 20 chains); always check the assembly.
+
+Full write-up: `results/peak_fma.md`.
+
+---
+
 ## Next
 - CI: Ubuntu + macOS × release/asan/ubsan
-- Measure true single-core FMA peak (microbenchmark) before quoting % of peak
 - Small-M dispatch (simd → ikj/GEMV when M < MR)
 - Stage 3 x86: AVX2 micro-kernel
 - Stage 4: OpenMP; re-measure decode bandwidth wall with multiple threads

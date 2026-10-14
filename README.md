@@ -31,7 +31,7 @@ Each stage records its mechanism (one sentence: *why* it's faster) and its measu
 | ikj | 32.7 | 13.4× | [X] (split measured: ~3.2× access pattern × ~4.2× SIMD) |
 | blocked (64/64/256) | 29.6 | 12.1× | [X] (slower than ikj at 1024: power-of-two set conflicts; +34% at n=1000) |
 | packed (64/64/256) | 41.9 | 17.2× | [X] (packing removes the power-of-two cliff) |
-| simd (NEON 8×12) | 115.3 | 47× | [X] (~0.2 memory ops per FMA vs 3 in Stages 1–2) |
+| simd (NEON 8×12) | 115.3 | 47× | [X] (~0.2 memory ops per FMA vs 3 in Stages 1–2); ~85% of measured 135 GFLOPS core peak ([peak](results/peak_fma.md)) |
 | omp | [X] | [X]× | [X] |
 | BLAS (Accelerate, AMX) | 2164 | 887× | — |
 

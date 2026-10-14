@@ -75,6 +75,9 @@ endif()
 add_executable(bench src/bench.cpp)
 target_link_libraries(bench PRIVATE gemm)
 
+# FMA throughput microbenchmark: the real per-core ceiling for GEMM (no kernels, no memory)
+add_executable(peak src/peak.cpp)
+
 # ---- tests -------------------------------------------------------------------
 enable_testing()
 

@@ -3,8 +3,8 @@
 **Mechanism (one sentence):** keeping an 8 × 12 tile of C in 24 NEON
 registers for the whole k loop turns each step into 20 floats loaded for 96
 fused multiply-adds (vs 3 memory ops per FMA in Stages 1–2), which moves the
-kernel from load/store-bound to FMA-bound: ~115 GFLOPS, 2.8–3× packed and
-~47× naive at n = 1024.
+kernel from load/store-bound to FMA-bound: ~115 GFLOPS, 2.8–3× packed,
+~47× naive at n = 1024, and ~85% of the measured ~135 GFLOPS single-core peak.
 
 ## Setup
 
@@ -72,13 +72,12 @@ fills 1 of 8 tile rows).
 
 ## 2. How close to peak?
 
-- Rough single P-core FP32 peak: 4 FMA pipes × 4 lanes × 2 flops ×
-  ~4.5 GHz ≈ **144 GFLOPS**. This is an estimate (pipe count and sustained
-  clock not verified).
-- simd at ~115 → **~80% of that estimate**. Stages 1–2 were at 22–30%.
-- To make this a measured number: a microbenchmark of independent `fmla`
-  chains with no memory traffic gives the real per-core ceiling. Next step
-  before quoting "% of peak" anywhere.
+Measured with `src/peak.cpp` (see `peak_fma.md`): one P-core sustains
+**~135 GFLOPS** FP32 FMA, reached at 16 independent chains.
+
+- simd at ~115 → **~85% of measured peak**. Stages 1–2 were at 24–31%.
+- (An earlier draft of this section used a ~144 GFLOPS *estimate* from
+  assumed pipe count and clock; the measurement replaces it.)
 
 ## 3. Transformer prefill (T = 512, warm)
 
@@ -120,7 +119,7 @@ fills 1 of 8 tile rows).
 
 ## 5. Where this stops helping
 
-- Compute: ~80% of an estimated peak. The rest is plausibly packing
+- Compute: ~85% of measured peak. The rest is plausibly packing
   overhead, edge tiles, loop control, and the C load/store per tile. Each
   needs a counter or experiment to attribute.
 - Beyond one core: Stage 4 (OpenMP). Prefill should scale with cores.
@@ -136,7 +135,7 @@ fills 1 of 8 tile rows).
 |---|---|---|
 | simd ~115 GFLOPS, 2.4–3.1× packed, 47× naive at 1024 | measured | §1 |
 | Register tile compiled to lane-indexed `fmla.4s` | disassembly | Setup |
-| ~80% of single-core peak | estimate (peak not measured) | §2 |
+| ~85% of single-core peak | measured (`peak_fma.md`) | §2 |
 | ~2.7× over packed on all prefill layers | measured | §3 |
 | simd is 7–8× slower than ikj in decode | measured | §4 |
 | Decode slowdown = wasted tile rows + edge path + B packing | arithmetic, not measured separately | §4 |
