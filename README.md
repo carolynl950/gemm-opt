@@ -107,11 +107,10 @@ Options: `-DGEMM_NATIVE=OFF` (no `-march`/`-mcpu=native`), `-DGEMM_USE_BLAS=OFF`
 
 ## CI
 
-Planned (not yet set up). GitHub Actions on every push:
+GitHub Actions (`.github/workflows/ci.yml`) on every push and PR, as a 2 × 3 matrix: Ubuntu (x86-64, OpenBLAS) and macOS (ARM64, Accelerate) × presets `release`, `asan`, `ubsan`. Each cell:
 
-1. Build and correctness tests on Ubuntu (x86-64) and macOS (ARM64)
-2. The same tests under AddressSanitizer + UBSan, to catch out-of-bounds bugs in tile edge handling
-3. A benchmark smoke run (checks that it runs; shared runners are too noisy for timing)
+1. Builds and runs `ctest` (every kernel vs naive on awkward sizes, padded strides, NaN-poisoned padding)
+2. Runs a bench smoke test on square and rectangular shapes; bench exits nonzero if any kernel fails its correctness gate. Timings from shared runners are discarded.
 
 ## Dead ends
 

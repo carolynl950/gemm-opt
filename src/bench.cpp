@@ -90,6 +90,7 @@ int main(int argc, char** argv) {
     }
 
     std::printf("implementation,m,n,k,run,seconds,gflops\n");
+    int mismatches = 0;                                  // nonzero exit if any kernel was wrong, so CI's smoke run can fail
 
     for (Shape s : shapes) {
         const int M = s.M, N = s.N, K = s.K;
@@ -123,6 +124,7 @@ int main(int argc, char** argv) {
             time_one(impl.fn, A, B, C, s, false);
             if (!matrices_match_bound(C_ref, C, scale, M, N, N, K)) {
                 std::fprintf(stderr, "%s %dx%dx%d: MISMATCH, skipping timing\n", impl.name, M, N, K);
+                mismatches++;
                 continue;                                       // never write timing rows for a wrong kernel
             }
 
@@ -147,5 +149,5 @@ int main(int argc, char** argv) {
         free_matrix(absB);
         free_matrix(scale);
     }
-    return 0;
+    return mismatches ? 1 : 0;
 }
