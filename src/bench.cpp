@@ -2,7 +2,7 @@
 // CSV rows -> stdout:  implementation,size,run,seconds,gflops
 // Progress, mismatches, checksums -> stderr (so `./bench > results.csv` stays clean)
 //
-// Usage: bench [--impl NAME] [--reps R] [n ...]
+// Usage: bench [--impl NAME] [--reps R] [--mc X --kc Y --nc Z] [n ...]
 //   no sizes -> default sweep; no --impl -> every kernel in IMPLS
 
 #include <chrono>
@@ -49,8 +49,11 @@ int main(int argc, char** argv) {
     for (int a = 1; a < argc; a++) {
         if (!std::strcmp(argv[a], "--impl") && a + 1 < argc)      only = argv[++a];
         else if (!std::strcmp(argv[a], "--reps") && a + 1 < argc) reps = std::atoi(argv[++a]);
+        else if (!std::strcmp(argv[a], "--mc") && a + 1 < argc)   set_block_sizes(std::atoi(argv[++a]), 0, 0);
+        else if (!std::strcmp(argv[a], "--kc") && a + 1 < argc)   set_block_sizes(0, std::atoi(argv[++a]), 0);
+        else if (!std::strcmp(argv[a], "--nc") && a + 1 < argc)   set_block_sizes(0, 0, std::atoi(argv[++a]));
         else if (std::atoi(argv[a]) > 0)                          sizes.push_back(std::atoi(argv[a]));
-        else { std::fprintf(stderr, "usage: bench [--impl NAME] [--reps R] [n ...]\n"); return 2; }
+        else { std::fprintf(stderr, "usage: bench [--impl NAME] [--reps R] [--mc X --kc Y --nc Z] [n ...]\n"); return 2; }
     }
     if (sizes.empty()) sizes.assign(std::begin(DEFAULT_SIZES), std::end(DEFAULT_SIZES));
     if (only) {                                                  // fail loudly on a typo instead of printing an empty CSV

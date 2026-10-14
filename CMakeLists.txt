@@ -49,6 +49,7 @@ endif()
 add_library(gemm STATIC
     src/kernels/naive_ijk.cpp
     src/kernels/reorder_ijk.cpp
+    src/kernels/blocked.cpp
 )
 target_include_directories(gemm PUBLIC include)
 

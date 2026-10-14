@@ -172,5 +172,20 @@ Full write-up with tables, hypotheses and evidence: `results/stage1_ikj.md`.
 
 ---
 
+## Stage 2a — cache blocking (done; 2b packing next)
+
+**Why it's faster (when it is):** tiling lets one KC × NC tile of B be reused
+by MC rows of A from L1: +34% over ikj at n = 1000, 2000. At powers of two
+the tile's rows collide in the same cache sets and blocking loses to ikj
+(0.83× at 2048) unless the tile is contiguous.
+
+- KC dominates; MC barely matters. Same 64 KB tile: contiguous 43 vs
+  strided 30 GFLOPS.
+- No single block size is best across n → pack B (Stage 2b).
+
+Full write-up: `results/stage2_blocked.md`.
+
+---
+
 ## Next
 - Bench CLI (`--impl --m --n --k --reps`)
