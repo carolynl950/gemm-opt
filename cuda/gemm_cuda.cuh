@@ -27,6 +27,10 @@ using CudaKernel = void (*)(const float* A, const float* B, float* C,
 void cuda_naive(const float* A, const float* B, float* C,
                 int M, int N, int K, int lda, int ldb, int ldc);
 
+// Stage 5b: naive with threads mapped for coalesced global-memory access.
+void cuda_coalesced(const float* A, const float* B, float* C,
+                    int M, int N, int K, int lda, int ldb, int ldc);
+
 // cuBLAS SGEMM: the ceiling to compare against (NVIDIA's tuned library).
 void cuda_cublas(const float* A, const float* B, float* C,
                  int M, int N, int K, int lda, int ldb, int ldc);
@@ -39,5 +43,6 @@ struct CudaImpl {
 // Single list for bench_cuda and test_cuda: add each new kernel here.
 inline constexpr CudaImpl CUDA_IMPLS[] = {
     {"cuda_naive", cuda_naive},
+    {"cuda_coalesced", cuda_coalesced},
     {"cublas", cuda_cublas},
 };

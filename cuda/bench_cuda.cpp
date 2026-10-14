@@ -2,9 +2,12 @@
 // CSV rows -> stdout:  implementation,m,n,k,run,seconds,gflops
 // Progress, mismatches, checksums -> stderr
 //
-// Usage: bench_cuda [--impl NAME] [--reps R] [--cold] [--shape MxNxK ...] [n ...]
+// Usage: bench_cuda [--impl NAME] [--reps R] [--cold] [--warmup-ms W] [--shape MxNxK ...] [n ...]
 //   --cold   overwrite a 256 MB device buffer before each timed run, evicting L2
 //            (T4 L2 = 4 MB), so weights come from DRAM like real decode
+//   --warmup-ms W   run each kernel untimed for at least W ms before timing (default 300):
+//            GPU clocks ramp up from idle, and one warmup run isn't enough (measured on T4:
+//            naive at n=1024 went 44.6 -> 60.8 GFLOPS over its first 5 timed runs)
 //
 // Timing: CUDA events around the kernel launch on the GPU's own clock. C is reset with
 // cudaMemset outside the timed region. One untimed warmup per kernel per shape also
@@ -42,19 +45,21 @@ int main(int argc, char** argv) {
     const char* only = nullptr;
     int reps = DEFAULT_REPS;
     bool cold = false;
+    float warmup_ms = 300.0f;
     std::vector<Shape> shapes;
     for (int a = 1; a < argc; a++) {
         int m, n, k;
         if (!std::strcmp(argv[a], "--impl") && a + 1 < argc)      only = argv[++a];
         else if (!std::strcmp(argv[a], "--reps") && a + 1 < argc) reps = std::atoi(argv[++a]);
         else if (!std::strcmp(argv[a], "--cold"))                 cold = true;
+        else if (!std::strcmp(argv[a], "--warmup-ms") && a + 1 < argc) warmup_ms = static_cast<float>(std::atof(argv[++a]));
         else if (!std::strcmp(argv[a], "--shape") && a + 1 < argc
                  && std::sscanf(argv[a + 1], "%dx%dx%d", &m, &n, &k) == 3 && m > 0 && n > 0 && k > 0) {
             shapes.push_back({m, n, k}); a++;
         }
         else if (std::atoi(argv[a]) > 0) { int s = std::atoi(argv[a]); shapes.push_back({s, s, s}); }
         else {
-            std::fprintf(stderr, "usage: bench_cuda [--impl NAME] [--reps R] [--cold] [--shape MxNxK ...] [n ...]\n");
+            std::fprintf(stderr, "usage: bench_cuda [--impl NAME] [--reps R] [--cold] [--warmup-ms W] [--shape MxNxK ...] [n ...]\n");
             return 2;
         }
     }
@@ -122,6 +127,21 @@ int main(int argc, char** argv) {
                 std::fprintf(stderr, "%s %dx%dx%d: MISMATCH, skipping timing\n", impl.name, M, N, K);
                 mismatches++;
                 continue;
+            }
+
+            // Timed warmup: keep running until the GPU has been busy for warmup_ms, so the
+            // clock has ramped up before the first timed run.
+            {
+                float busy_ms = 0.0f;
+                while (busy_ms < warmup_ms) {
+                    float ms = 0.0f;
+                    CUDA_CHECK(cudaEventRecord(t0));
+                    impl.fn(dA, dB, dC, M, N, K, K, N, N);
+                    CUDA_CHECK(cudaEventRecord(t1));
+                    CUDA_CHECK(cudaEventSynchronize(t1));
+                    CUDA_CHECK(cudaEventElapsedTime(&ms, t0, t1));
+                    busy_ms += ms;
+                }
             }
 
             for (int run = 0; run < reps; run++) {
