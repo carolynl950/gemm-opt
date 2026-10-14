@@ -19,6 +19,10 @@ using Kernel = void (*)(const float* A, const float* B, float* C,
 void matmul_naive(const float* A, const float* B, float* C,
                   int M, int N, int K, int lda, int ldb, int ldc);
 
+// Stage 1: ikj loop order — inner loop streams rows of B and C contiguously.
+void matmul_ikj(const float* A, const float* B, float* C,
+                int M, int N, int K, int lda, int ldb, int ldc);
+
 #ifdef GEMM_HAVE_BLAS
 // Vendor BLAS (Accelerate on macOS, OpenBLAS on Linux) — the ceiling to compare against.
 void matmul_blas(const float* A, const float* B, float* C,
