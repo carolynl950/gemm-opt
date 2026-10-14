@@ -1,11 +1,16 @@
 // bench.cpp — Stage 1.4 benchmark harness
 // CSV rows -> stdout:  implementation,size,run,seconds,gflops
 // Progress, mismatches, checksums -> stderr (so `./bench > results.csv` stays clean)
+//
+// Usage: bench [--impl NAME] [--reps R] [n ...]
+//   no sizes -> default sweep; no --impl -> every kernel in IMPLS
 
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <random>
+#include <vector>
 
 #include "alloc.hpp"
 #include "check.hpp"
@@ -13,8 +18,8 @@
 #include "kernels.hpp"
 
 
-static const int SIZES[] = {128, 256, 512, 1024, 2048};
-constexpr int REPS = 5;
+static const int DEFAULT_SIZES[] = {128, 256, 512, 1024, 2048};
+constexpr int DEFAULT_REPS = 5;
 
 
 // Seconds for ONE call of fn.
@@ -37,10 +42,26 @@ static double gflops(int n, double seconds) {
     return flops / seconds / 1e9;              // flops per second, scaled to giga
 }
 
-int main() {
+int main(int argc, char** argv) {
+    const char* only = nullptr;              // --impl NAME: run just this kernel
+    int reps = DEFAULT_REPS;
+    std::vector<int> sizes;
+    for (int a = 1; a < argc; a++) {
+        if (!std::strcmp(argv[a], "--impl") && a + 1 < argc)      only = argv[++a];
+        else if (!std::strcmp(argv[a], "--reps") && a + 1 < argc) reps = std::atoi(argv[++a]);
+        else if (std::atoi(argv[a]) > 0)                          sizes.push_back(std::atoi(argv[a]));
+        else { std::fprintf(stderr, "usage: bench [--impl NAME] [--reps R] [n ...]\n"); return 2; }
+    }
+    if (sizes.empty()) sizes.assign(std::begin(DEFAULT_SIZES), std::end(DEFAULT_SIZES));
+    if (only) {                                                  // fail loudly on a typo instead of printing an empty CSV
+        bool found = false;
+        for (const Impl& impl : IMPLS) found = found || !std::strcmp(impl.name, only);
+        if (!found) { std::fprintf(stderr, "unknown --impl %s\n", only); return 2; }
+    }
+
     std::printf("implementation,size,run,seconds,gflops\n");
 
-    for (int n : SIZES) {
+    for (int n : sizes) {
         // Square matrices, tightly packed: ld = n
         float* A     = alloc_matrix(n, n);
         float* B     = alloc_matrix(n, n);
@@ -60,6 +81,7 @@ int main() {
         std::fprintf(stderr, "n=%d: reference computed\n", n);
 
         for (const Impl& impl : IMPLS) {
+            if (only && std::strcmp(impl.name, only)) continue;
             // Correctness gate + warmup in one call: warms caches/TLB, faults in pages, and checks the answer.
             // The time is thrown away.
             time_one(impl.fn, A, B, C, n);
@@ -69,7 +91,7 @@ int main() {
             }
 
             // Timed runs: one CSV row each. Keep every run (not just the min/median) so the analysis can pick later.
-            for (int run = 0; run < REPS; run++) {
+            for (int run = 0; run < reps; run++) {
                 double s = time_one(impl.fn, A, B, C, n);
                 std::printf("%s,%d,%d,%.9f,%.4f\n", impl.name, n, run, s, gflops(n, s));
             }

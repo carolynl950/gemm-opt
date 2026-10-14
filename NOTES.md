@@ -1,10 +1,11 @@
 # NOTES.md — GEMM optimization project
 
 ## Machine (development)
-- MacBook Pro, Apple M4 (ARM64), Apple Clang 17
+- MacBook Pro, **Apple M4 Pro** (ARM64), Apple clang 17.0.0
+- P-core: 128 KB L1d, 16 MB shared L2, **128 B cache lines**, 16 KB pages (`sysctl hw.perflevel0.*`, `hw.cachelinesize`, `hw.pagesize`)
 
 ## Reference numbers
-- `sizeof(float)` = 4 → **16 floats per 64 B cache line**, **8 per AVX2 register**
+- `sizeof(float)` = 4 → **32 floats per 128 B line on M4 Pro** (16 per 64 B line on x86), **4 per NEON register**, **8 per AVX2 register**
 - `FLT_EPSILON` ≈ 1.19e-7 (2^-23, from 23 mantissa bits)
 - Matrix memory footprint (single matrix; ×3 for A, B, C):
 
@@ -155,6 +156,21 @@ K·ε·scale; that's the price of never rejecting a correct kernel.
 
 ---
 
+## Stage 1 — `ikj` loop reorder (done)
+
+**Why it's faster:** swapping `j` and `k` turns naive's column walk down B
+into contiguous row walks over B and C, which uses every float of each cache
+line *and* removes the serial add chain, so the inner loop vectorizes to
+`fmla.4s`.
+
+- 10–27× over naive on M4 Pro; measured split ≈ 2.6× access pattern × 4.3×
+  SIMD at n=512.
+- Naive's 2048 cliff is the power-of-two stride (2050 is 1.7× faster).
+- ikj loses ~25% when rows aren't 16 B aligned (n not a multiple of 4).
+
+Full write-up with tables, hypotheses and evidence: `results/stage1_ikj.md`.
+
+---
+
 ## Next
-- Stage 1 `ikj`
 - Bench CLI (`--impl --m --n --k --reps`)

@@ -13,7 +13,7 @@ Matrix multiply dominates ML training and inference. Every transformer layer is 
 | Stage | Kernel | Idea | Status |
 |---|---|---|---|
 | 0 | `naive` (ijk) | Textbook triple loop; correctness reference | Done |
-| 1 | `ikj` | Loop reorder so the inner loop streams B and C rows contiguously | Next |
+| 1 | `ikj` | Loop reorder so the inner loop streams B and C rows contiguously | Done ([analysis](results/stage1_ikj.md)) |
 | 2 | `blocked` | Cache blocking (tiling) with runtime block size and remainder handling | Planned |
 | 3 | `simd` | AVX2 (x86-64) vectorized micro-kernel | Planned |
 | 4 | `omp` | OpenMP multithreading over blocks | Planned |
@@ -27,14 +27,14 @@ Each stage records its mechanism (one sentence: *why* it's faster) and its measu
 
 | Kernel | GFLOPS (N=1024) | Speedup vs naive | Key counter change |
 |---|---|---|---|
-| naive | [X] | 1.0× | — |
-| ikj | [X] | [X]× | [X] |
+| naive | 2.44 | 1.0× | — |
+| ikj | 32.7 | 13.4× | [X] (split measured: ~3.2× access pattern × ~4.2× SIMD) |
 | blocked | [X] | [X]× | [X] |
 | simd | [X] | [X]× | [X] |
 | omp | [X] | [X]× | [X] |
-| BLAS ([vendor]) | [X] | [X]× | — |
+| BLAS (Accelerate, AMX) | 2164 | 887× | — |
 
-Hardware: [CPU model, cores, cache sizes, compiler + flags, BLAS vendor]
+Hardware (current numbers): Apple M4 Pro, single thread, 128 KB L1d / 16 MB L2 / 128 B lines; Apple clang 17, `-O3 -mcpu=native`; BLAS = Accelerate. Median of 5 reps. Final x86 numbers: [X]
 
 On Apple silicon the BLAS reference is Accelerate, which uses the AMX matrix units. It is reported separately and is not a target for the hand-written kernels.
 
@@ -81,6 +81,10 @@ cmake --preset asan  && cmake --build --preset asan  && ctest --preset asan
 cmake --preset ubsan && cmake --build --preset ubsan && ctest --preset ubsan
 
 ./build/release/bench > results.csv    # CSV: implementation,size,run,seconds,gflops
+./build/release/bench --impl ikj --reps 5 1000 2048   # one kernel, chosen sizes
+
+# Experiment build: auto-vectorization off (separates loop-order gains from SIMD)
+cmake --preset novec && cmake --build --preset novec
 ```
 
 `ctest` does not rebuild. Always build before testing.

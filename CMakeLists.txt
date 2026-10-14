@@ -13,6 +13,7 @@ endif()
 option(GEMM_NATIVE "Tune for the build machine's CPU (-march=native / -mcpu=native)" ON)
 set(GEMM_SANITIZER "" CACHE STRING "Sanitizer to build with: '', 'address', or 'undefined'")
 option(GEMM_USE_BLAS "Build the vendor-BLAS reference kernel if a BLAS is found" ON)
+option(GEMM_VECTORIZE "Allow compiler auto-vectorization (OFF = experiment: isolate loop-order gains from SIMD)" ON)
 
 # ---- flags applied to every target -------------------------------------------
 add_compile_options(-Wall -Wextra)
@@ -26,6 +27,11 @@ if(GEMM_NATIVE)
     elseif(HAVE_MCPU_NATIVE)
         add_compile_options(-mcpu=native)       # Apple clang on arm64
     endif()
+endif()
+
+if(NOT GEMM_VECTORIZE)
+    # clang: loop vectorizer + SLP (straight-line) vectorizer. gcc spelling is -fno-tree-vectorize.
+    add_compile_options(-fno-vectorize -fno-slp-vectorize)
 endif()
 
 if(GEMM_SANITIZER STREQUAL "address")

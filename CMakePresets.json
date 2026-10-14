@@ -9,6 +9,12 @@
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     },
     {
+      "name": "novec",
+      "displayName": "Release, auto-vectorization OFF (experiment)",
+      "inherits": "release",
+      "cacheVariables": { "GEMM_VECTORIZE": "OFF" }
+    },
+    {
       "name": "asan",
       "displayName": "AddressSanitizer",
       "inherits": "release",
@@ -23,6 +29,7 @@
   ],
   "buildPresets": [
     { "name": "release", "configurePreset": "release" },
+    { "name": "novec",   "configurePreset": "novec" },
     { "name": "asan",    "configurePreset": "asan" },
     { "name": "ubsan",   "configurePreset": "ubsan" }
   ],
