@@ -17,6 +17,7 @@ Matrix multiply dominates ML training and inference. Every transformer layer is 
 | 2 | `blocked` | Cache blocking (tiling) with runtime block size and remainder handling | Done: [2a blocking](results/stage2_blocked.md), [2b packing](results/stage2b_packed.md) |
 | 3 | `simd` | Packed A + B, 8×12 register-blocked micro-kernel: NEON (M4) done, AVX2 (x86-64) planned | NEON done ([analysis](results/stage3_simd.md)) |
 | 4 | `omp` | OpenMP over B panels (jr loop); split-K for M < 8 | Done on M4 ([analysis](results/stage4_omp.md)) |
+| 5 | `cuda_*` | CUDA on a Tesla T4: naive → coalesced → shared-memory tiling → 8×8 register tiling | Done ([analysis](results/stage5_cuda.md)) |
 | — | `blas` | Vendor BLAS reference ceiling (Accelerate on macOS, OpenBLAS on Linux) | Wired up |
 
 Each stage records its mechanism (one sentence: *why* it's faster) and its measured effect in `NOTES.md`.
@@ -38,6 +39,20 @@ Each stage records its mechanism (one sentence: *why* it's faster) and its measu
 Hardware (current numbers): Apple M4 Pro, single thread, 128 KB L1d / 16 MB L2 / 128 B lines; Apple clang 17, `-O3 -mcpu=native`; BLAS = Accelerate. Median of 5 reps. Final x86 numbers: [X]
 
 On Apple silicon the BLAS reference is Accelerate, which uses the AMX matrix units. It is reported separately and is not a target for the hand-written kernels.
+
+### GPU (Tesla T4, CUDA)
+
+Same run, n = 2048, GFLOPS (median of 10). The T4 is capped at 70 W, so cuBLAS is measured in its sustained (power-capped) state. Full analysis: [results/stage5_cuda.md](results/stage5_cuda.md).
+
+| Kernel | GFLOPS | vs naive | vs cuBLAS | What changed |
+|---|---|---|---|---|
+| cuda_naive | 61.5 | 1× | 2% | one thread per C element; warp reads A down a column (uncoalesced) |
+| cuda_coalesced | 572.5 | 9.3× | 15% | warp maps to consecutive columns: 4 transactions per load instead of 32 |
+| cuda_smem | 866.1 | 14× | 23% | 32×32 tiles in shared memory, each value reused 32× |
+| cuda_regtile | **3,544.8** | **57×** | **94%** | 8×8 outputs per thread in registers: 0.25 shared reads per FMA instead of 2 |
+| cuBLAS | 3,787.2 | 62× | 100% | NVIDIA's library |
+
+regtile falls to 49–78% of cuBLAS on shapes that launch fewer blocks than the 40 SMs can hold (e.g. 512²), and is the slowest kernel at M = 1 (decode), the same pattern as the CPU micro-kernel.
 
 ### Transformer workloads
 

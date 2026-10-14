@@ -1,4 +1,14 @@
-# Stage 5: CUDA SGEMM on a Tesla T4 — results and analysis (in progress)
+# Stage 5: CUDA SGEMM on a Tesla T4 — results and analysis
+
+**Headline:** from a naive kernel at ~62 GFLOPS to a register-tiled kernel at
+**3,545 GFLOPS (57×), 94% of cuBLAS** at n = 2048, measured in the same run
+on the same power-capped T4. Each step targets one bottleneck: memory
+coalescing (8–12×), shared-memory reuse (1.3–1.5×), register tiling (2–4×).
+
+**5d mechanism (one sentence):** giving each thread an 8×8 patch of C in
+registers turns each k-step into 16 shared-memory reads for 64 FMAs instead
+of 2 reads per FMA, and 256-thread blocks let two blocks share an SM, taking
+the kernel from shared-memory-bound to within 6–13% of cuBLAS on large shapes.
 
 **5c mechanism (one sentence):** loading 32×32 tiles of A and B into shared
 memory once per block and reusing each value 32 times cuts global-memory
@@ -31,6 +41,7 @@ CSVs, one set per Colab run (each run measures every kernel that existed then):
 | 5a first run (1-run warmup, no clock log) | `stage5a_square_t4_first_run.csv` | naive, cuBLAS |
 | 5b run | `stage5b_{square,prefill,decode_cold}_t4.csv`, `stage5b_gpu_clocks_*.csv` | + coalesced |
 | 5c run | `stage5c_{square,prefill,decode_cold}_t4.csv`, `stage5c_gpu_clocks_*.csv` | + smem |
+| 5d run | `stage5d_{square,prefill,decode_cold}_t4.csv`, `stage5d_gpu_clocks_*.csv` | + regtile |
 
 **Compare kernels within one run, not across runs.** Separate Colab sessions
 can land on different physical T4s and thermal states: the same coalesced
@@ -134,8 +145,8 @@ tile (both coalesced), `__syncthreads()`, 32 FMAs from shared memory,
 `__syncthreads()`. Out-of-range tile elements are zero-filled; the C bounds
 check is at the end so every thread reaches every barrier.
 
-`test_cuda`: **68/68** expected (4 kernels × 17 shapes); bench gate passed
-for smem on every shape.
+`test_cuda`: bench gate passed for smem on every shape; full `test_cuda`
+confirmed in the 5d run (95/95, below).
 
 ### Square (GFLOPS, median of 10; min–max shown for the new kernel)
 
@@ -193,6 +204,100 @@ for smem on every shape.
 | prefill | 9 / 17 | `0x4` | 810 MHz | 68.7 W |
 | decode | 12 / 16 | `0x4` | 1350 MHz | 71.7 W |
 
+## 5. Register tiling (5d), from the 5d run
+
+Kernel: `cuda/kernels/regtile.cu`.
+
+Correctness: `test_cuda` **95/95** (5 kernels × 19 shapes, including partial
+128-wide tiles and K not a multiple of 8), padded strides and NaN-poisoned
+padding included.
+
+| | 5c smem | 5d regtile |
+|---|---|---|
+| outputs per thread | 1 | 64 (8×8, registers) |
+| shared reads per FMA | 2 | 0.25 |
+| threads per block | 1024 | 256 |
+| C tile per block | 32×32 | 128×128 |
+| k-step | 32 | 8 |
+
+Design details that matter (all in the code comments):
+- **Strided ownership** (thread owns cols `tx + 16j`, rows `ty + 16i`): a
+  warp's `Bs` reads hit 16 consecutive floats (no bank conflict) and its C
+  writes are coalesced. Consecutive ownership (`tx*8 + j`) would make the
+  reads 4-way bank-conflicted.
+- **A tile stored transposed with 4 floats of padding**: without padding the
+  8 threads writing one A row would hit the same bank (8-way conflict).
+- **`__launch_bounds__(256)`** so the compiler budgets registers for 64
+  accumulators without spilling.
+
+### Square (GFLOPS, median of 10)
+
+| n | naive | coalesced | smem | **regtile** (min–max) | cuBLAS | **regtile / cuBLAS** | regtile / smem |
+|---|---|---|---|---|---|---|---|
+| 512 | 55.7 | 660.2 | 899.5 | **1,926** (1,910–1,928) | 3,904 | 49% | 2.1× |
+| 1024 | 60.6 | 583.7 | 879.4 | **3,091** (3,086–3,099) | 3,543 | 87% | 3.5× |
+| 2048 | 61.5 | 572.5 | 866.1 | **3,545** (3,491–3,725) | 3,787 | **94%** | 4.1× |
+| 4096 | 61.7 | 534.7 | 842.5 | **3,168** (3,148–3,181) | 3,651 | 87% | 3.8× |
+
+### GPT-2 prefill (T = 512)
+
+| Layer | smem | **regtile** | cuBLAS | regtile / cuBLAS | blocks (128×128 tiles) |
+|---|---|---|---|---|---|
+| attn out (512×768×768) | 1,017.5 | 2,236.6 | 4,346.9 | 51% | 24 |
+| MLP down (512×768×3072) | 816.7 | 2,331.8 | 3,466.6 | 67% | 24 |
+| QKV (512×2304×768) | 758.2 | 2,856.0 | 3,656.1 | 78% | 72 |
+| MLP up (512×3072×768) | 741.6 | 2,701.4 | 3,502.6 | 77% | 96 |
+
+### Where regtile falls short: not enough blocks to fill 40 SMs
+
+Blocks launched = ⌈M/128⌉ × ⌈N/128⌉. At 2 blocks per SM the T4 holds 80 at once.
+
+| shape | blocks | fraction of 80 slots | regtile / cuBLAS |
+|---|---|---|---|
+| 512² | 16 | 0.2 | 49% |
+| attn out, MLP down | 24 | 0.3 | 51–67% |
+| 1024² | 64 | 0.8 | 87% |
+| QKV, MLP up | 72–96 | 0.9–1.2 | 77–78% |
+| 2048² | 256 | 3.2 | 94% |
+
+- The pattern is clean: with fewer blocks than SMs, some SMs sit idle the
+  whole kernel. 512² launches 16 blocks for 40 SMs, so 60% of the GPU does
+  nothing. Big 128×128 tiles are the right choice for big matrices and the
+  wrong one for small ones (hypothesis for the cause, but the correlation
+  across all 8 shapes is strong; occupancy not profiled).
+- cuBLAS picks among many kernels (tile sizes, split-K) per shape; ours has
+  one. Fix options: smaller tiles (64×64 → 4× the blocks) or split-K for
+  small M·N. Not done.
+- 4096 (87%) < 2048 (94%) despite plenty of blocks: hypothesis is L2 misses
+  (a 128×4096 strip of A and B per block row no longer fits the 4 MB L2).
+  Not tested.
+
+### Decode (T = 1, cold): regtile is the worst kernel
+
+| Layer | coalesced | smem | regtile | cuBLAS |
+|---|---|---|---|---|
+| QKV | 50.4 | 23.5 | 14.6 | 95.7 |
+| attn out | 36.0 | 16.0 | 5.1 | 67.5 |
+| MLP up | 50.0 | 22.0 | 19.2 | 105.8 |
+| MLP down | 39.0 | 16.9 | 5.5 | 88.6 |
+
+- M = 1 fills 1 of each block's 128 rows: 127/128 of the FMAs multiply zero
+  padding, and N/128 = 6–24 blocks leave most SMs idle. Exactly the CPU
+  Stage 3 result (8×12 tile at M = 1), and the same fix applies: dispatch
+  small M to a different kernel (coalesced is the best of ours, ~half of
+  cuBLAS). Not done yet on the GPU.
+
+### Clocks during the 5d run
+
+| run | throttled samples | reason | min clock | max power |
+|---|---|---|---|---|
+| square | 26 / 87 | `0x4` power cap | 585 MHz | 77.6 W |
+| prefill | 11 / 21 | `0x4` | 735 MHz | 75.4 W |
+| decode | 19 / 20 | `0x4` | 1320 MHz | 70.7 W |
+
+regtile now draws enough power to be capped too, so regtile and cuBLAS are
+compared under the same conditions.
+
 ## Summary of claims and evidence
 
 | Claim | Status | Evidence |
@@ -206,8 +311,15 @@ for smem on every shape.
 | smem is now shared-memory / issue bound | hypothesis (no Nsight) | §4 |
 | smem is 0.45× coalesced in decode | measured | §4 |
 | Cross-session variance ~10–12% on the same kernel | measured | Setup |
+| regtile 3,545 GFLOPS = 94% of cuBLAS at 2048; 57× naive | measured, same run; test_cuda 95/95 | §5 |
+| regtile 2–4× smem (8× fewer shared reads per FMA + 2 blocks/SM) | measured; mechanism from arithmetic, not profiled | §5 |
+| regtile's gap to cuBLAS on small shapes tracks blocks < SMs | strong correlation across 8 shapes; not profiled | §5 |
+| regtile is the worst kernel in decode (M = 1) | measured | §5 |
 
-## Next
+## Next (optional)
 
-- **5d: register tiling** — each thread computes several C elements from
-  registers (GPU version of Stage 3).
+- GPU small-M dispatch: send M < some threshold to coalesced (measure the
+  crossover, as on the CPU).
+- Smaller tiles or split-K for shapes with fewer blocks than SMs.
+- Nsight Compute profiles to confirm the bottleneck hypotheses (shared-memory
+  bound in 5c, occupancy in 5d).

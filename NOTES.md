@@ -270,7 +270,7 @@ Full write-up: `results/stage4_omp.md`.
 
 ---
 
-## Stage 5a/5b/5c — CUDA naive, coalesced, shared memory on T4 (in progress)
+## Stage 5 — CUDA on T4: naive → coalesced → shared memory → register tiling (done)
 
 **Why 5b is faster:** mapping a warp's 32 threads to consecutive columns
 makes each warp load of B 4 contiguous transactions instead of a scatter:
@@ -282,6 +282,10 @@ makes each warp load of B 4 contiguous transactions instead of a scatter:
 - 5c shared-memory tiling: 1.3–1.5× coalesced (~880–985 GFLOPS, 17–25% of
   cuBLAS), not 32×: bottleneck moves to 2 shared loads per FMA. Slower than
   coalesced in decode (nothing to reuse at M = 1).
+- 5d register tiling (8×8 per thread, 128×128 block tiles): **3,545 GFLOPS
+  = 94% of cuBLAS at n = 2048, 57× naive**, same run. Falls to 49–78% on
+  shapes with fewer blocks than the 40 SMs can hold; worst kernel in decode
+  (needs small-M dispatch, like the CPU).
 
 Full write-up: `results/stage5_cuda.md`.
 
