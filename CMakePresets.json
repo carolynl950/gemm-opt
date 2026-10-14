@@ -18,13 +18,13 @@
       "name": "asan",
       "displayName": "AddressSanitizer",
       "inherits": "release",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "GEMM_SANITIZER": "address" }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "GEMM_SANITIZER": "address", "GEMM_USE_CUDA": "OFF" }
     },
     {
       "name": "ubsan",
       "displayName": "UndefinedBehaviorSanitizer",
       "inherits": "release",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "GEMM_SANITIZER": "undefined" }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "GEMM_SANITIZER": "undefined", "GEMM_USE_CUDA": "OFF" }
     }
   ],
   "buildPresets": [
