@@ -172,7 +172,7 @@ Full write-up with tables, hypotheses and evidence: `results/stage1_ikj.md`.
 
 ---
 
-## Stage 2a — cache blocking (done; 2b packing next)
+## Stage 2a — cache blocking (done)
 
 **Why it's faster (when it is):** tiling lets one KC × NC tile of B be reused
 by MC rows of A from L1: +34% over ikj at n = 1000, 2000. At powers of two
@@ -184,6 +184,21 @@ the tile's rows collide in the same cache sets and blocking loses to ikj
 - No single block size is best across n → pack B (Stage 2b).
 
 Full write-up: `results/stage2_blocked.md`.
+
+---
+
+## Stage 2b — packing B (done)
+
+**Why it's faster:** copying each B tile into a contiguous aligned buffer
+makes its cache footprint independent of `ldb`, removing the power-of-two
+cliff (1024: 29.6 → 41.9; 2048: 26.8 → 37.8) and beating ikj at every n.
+
+- Performance now depends on tile **size**, not shape: ≤ 128 KB (L1) runs
+  36–43, ≥ 256 KB falls back to ikj's ~32.
+- Still ~30% of estimated peak: the inner loop needs 2 loads + 1 store per
+  FMA. Next lever is register blocking (micro-kernel).
+
+Full write-up: `results/stage2b_packed.md`.
 
 ---
 

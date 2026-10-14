@@ -26,7 +26,10 @@ void matmul_ikj(const float* A, const float* B, float* C,
 // Stage 2: cache blocking — ikj restricted to MC x KC x NC tiles.
 void matmul_blocked(const float* A, const float* B, float* C,
                     int M, int N, int K, int lda, int ldb, int ldc);
-// Set blocked's tile sizes (values <= 0 leave that size unchanged). Not thread-safe.
+// Stage 2b: blocking + packing B tiles into a contiguous aligned buffer.
+void matmul_packed(const float* A, const float* B, float* C,
+                   int M, int N, int K, int lda, int ldb, int ldc);
+// Set blocked's and packed's tile sizes (values <= 0 leave that size unchanged). Not thread-safe.
 void set_block_sizes(int mc, int kc, int nc);
 
 #ifdef GEMM_HAVE_BLAS

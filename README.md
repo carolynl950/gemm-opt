@@ -14,7 +14,7 @@ Matrix multiply dominates ML training and inference. Every transformer layer is 
 |---|---|---|---|
 | 0 | `naive` (ijk) | Textbook triple loop; correctness reference | Done |
 | 1 | `ikj` | Loop reorder so the inner loop streams B and C rows contiguously | Done ([analysis](results/stage1_ikj.md)) |
-| 2 | `blocked` | Cache blocking (tiling) with runtime block size and remainder handling | 2a done ([analysis](results/stage2_blocked.md)); 2b packing next |
+| 2 | `blocked` | Cache blocking (tiling) with runtime block size and remainder handling | Done: [2a blocking](results/stage2_blocked.md), [2b packing](results/stage2b_packed.md) |
 | 3 | `simd` | AVX2 (x86-64) vectorized micro-kernel | Planned |
 | 4 | `omp` | OpenMP multithreading over blocks | Planned |
 | — | `blas` | Vendor BLAS reference ceiling (Accelerate on macOS, OpenBLAS on Linux) | Wired up |
@@ -30,6 +30,7 @@ Each stage records its mechanism (one sentence: *why* it's faster) and its measu
 | naive | 2.44 | 1.0× | — |
 | ikj | 32.7 | 13.4× | [X] (split measured: ~3.2× access pattern × ~4.2× SIMD) |
 | blocked (64/64/256) | 29.6 | 12.1× | [X] (slower than ikj at 1024: power-of-two set conflicts; +34% at n=1000) |
+| packed (64/64/256) | 41.9 | 17.2× | [X] (packing removes the power-of-two cliff) |
 | simd | [X] | [X]× | [X] |
 | omp | [X] | [X]× | [X] |
 | BLAS (Accelerate, AMX) | 2164 | 887× | — |

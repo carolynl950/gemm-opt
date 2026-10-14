@@ -31,7 +31,7 @@ static const Shape SHAPES[] = {
     {128, 512, 128},  // two full blocks each way: block loops actually iterate
 };
 
-// Second pass for blocked with tiny, mutually prime tiles, so nearly every
+// Second pass for blocked/packed with tiny, mutually prime tiles, so nearly every
 // shape above hits a remainder in all three block loops.
 static const int TINY_MC = 3, TINY_KC = 5, TINY_NC = 7;
 
@@ -141,10 +141,12 @@ int main() {
 
     // Last, so it can't leak tiny tiles into the default-size pass above.
     set_block_sizes(TINY_MC, TINY_KC, TINY_NC);
-    const Impl tiny = {"blocked(3,5,7)", matmul_blocked};
-    for (Shape s : SHAPES) {
-        total++;
-        if (!run_case(tiny, s)) failures++;
+    const Impl tiny[] = {{"blocked(3,5,7)", matmul_blocked}, {"packed(3,5,7)", matmul_packed}};
+    for (const Impl& impl : tiny) {
+        for (Shape s : SHAPES) {
+            total++;
+            if (!run_case(impl, s)) failures++;
+        }
     }
 
     std::printf("test_kernels: %d/%d cases passed\n", total - failures, total);

@@ -1,4 +1,5 @@
 #include "gemm.h"
+#include "alloc.hpp"   // alloc_matrix / free_matrix for the pack buffer
 #include <algorithm>   // std::min
 
 // Stage 2: cache blocking. Same ikj inner loops as Stage 1, but restricted to
@@ -40,4 +41,48 @@ void matmul_blocked(const float* A, const float* B, float* C,
             }
         }
     }
+}
+
+// Stage 2b: blocking + packing. Each KC x NC tile of B is copied into a
+// contiguous, aligned buffer before use, so the tile's cache footprint no
+// longer depends on ldb: no power-of-two set conflicts, every row 16 B aligned.
+// Loop order k0 -> j0 -> i: each tile is packed once and reused by all M rows.
+void matmul_packed(const float* A, const float* B, float* C,
+                   int M, int N, int K, int lda, int ldb, int ldc) {
+    const int pld_max = (g_nc + 3) & ~3;                   // widest tile, rounded up to 4 floats (16 B)
+    float* Bp = alloc_matrix(g_kc, pld_max);               // one buffer, reused for every tile
+    if (!Bp) return;                                       // leaves C unchanged; the test would catch it
+
+    for (int k0 = 0; k0 < K; k0 += g_kc) {
+        const int k_end = std::min(k0 + g_kc, K);
+        for (int j0 = 0; j0 < N; j0 += g_nc) {
+            const int j_end = std::min(j0 + g_nc, N);
+            const int w   = j_end - j0;                    // this tile's width (short on the last tile)
+            const int pld = (w + 3) & ~3;                  // packed row stride: contiguous rows, each 16 B aligned
+
+            // ---- pack: B[k0:k_end, j0:j_end] -> Bp, row-major with stride pld ----
+            for (int k = k0; k < k_end; k++) {
+                const float* src = B + k * ldb + j0;
+                float* dst = Bp + (k - k0) * pld;
+                for (int j = 0; j < w; j++) dst[j] = src[j];
+            }
+
+            // ---- compute: every row of A against the packed tile ----
+            for (int i0 = 0; i0 < M; i0 += g_mc) {
+                const int i_end = std::min(i0 + g_mc, M);
+                for (int i = i0; i < i_end; i++) {
+                    const float* a_row = A + i * lda;
+                    float* c_row = C + i * ldc + j0;       // this tile's slice of row i of C
+                    for (int k = k0; k < k_end; k++) {
+                        const float a = a_row[k];
+                        const float* bp_row = Bp + (k - k0) * pld;
+                        for (int j = 0; j < w; j++) {
+                            c_row[j] += a * bp_row[j];     // same ikj inner loop, reading the packed copy
+                        }
+                    }
+                }
+            }
+        }
+    }
+    free_matrix(Bp);
 }
