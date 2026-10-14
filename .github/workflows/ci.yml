@@ -23,7 +23,7 @@ jobs:
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
-        run: brew install ninja   # Accelerate ships with macOS
+        run: brew install ninja libomp   # Accelerate ships with macOS; libomp enables the omp kernel
 
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}

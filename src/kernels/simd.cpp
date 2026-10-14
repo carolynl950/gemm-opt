@@ -164,3 +164,99 @@ void matmul_simd(const float* A, const float* B, float* C,
     free_matrix(Ap);
     free_matrix(Bp);
 }
+
+#ifdef GEMM_HAVE_OPENMP
+#include <omp.h>
+
+// Stage 4: multithreaded simd. Same packing and micro-kernel; work split across threads.
+//
+// Which loop to parallelize: ic (row blocks) gives only M/MC = 4 work items at prefill
+// M = 512, so half of 8 cores would idle. jr (12-col B panels) gives nc/NR = 64-128 items
+// per block, and every thread reads the same shared packed A and B (BLIS's choice).
+//
+// Threads must agree on when shared buffers may be overwritten: every `omp for` ends
+// with an implicit barrier, so no thread repacks A or B while another is still reading it.
+void matmul_omp(const float* A, const float* B, float* C,
+                int M, int N, int K, int lda, int ldb, int ldc) {
+    if (M <= 0 || N <= 0 || K <= 0) return;
+
+    if (M < MR) {
+        // Decode-like: split-K. Each thread takes a contiguous range of B's ROWS and streams
+        // it front to back (the prefetcher-friendly pattern, see results/stage4_omp.md), into
+        // a private M x N partial C; partials are then summed into C.
+        // (A first version split N into 256-col strips: each thread then walked B in 1 KB
+        // pieces one row apart, and 1 thread ran at 9.6 GFLOPS vs ikj's 30.)
+        const int T = std::min(omp_get_max_threads(), K);
+        float* partial = alloc_matrix(T, M * N);                  // T private M x N buffers
+        if (!partial) { matmul_ikj(A, B, C, M, N, K, lda, ldb, ldc); return; }
+        #pragma omp parallel num_threads(T)
+        {
+            const int t  = omp_get_thread_num();
+            const int k0 = static_cast<int>(static_cast<long>(K) * t / T);
+            const int k1 = static_cast<int>(static_cast<long>(K) * (t + 1) / T);
+            float* Cp = partial + static_cast<long>(t) * M * N;
+            for (int i = 0; i < M * N; i++) Cp[i] = 0.0f;
+            matmul_ikj(A + k0, B + static_cast<long>(k0) * ldb, Cp, M, N, k1 - k0, lda, ldb, N);
+            #pragma omp barrier
+            // Reduce: threads split the columns of C, each sums all T partials for its columns.
+            #pragma omp for schedule(static)
+            for (int j = 0; j < N; j++)
+                for (int i = 0; i < M; i++) {
+                    float sum = 0.0f;
+                    for (int u = 0; u < T; u++) sum += partial[static_cast<long>(u) * M * N + i * N + j];
+                    C[i * ldc + j] += sum;
+                }
+        }
+        free_matrix(partial);
+        return;
+    }
+
+    const int kc_max = std::min(K, KC);
+    float* Ap = alloc_matrix(round_up(std::min(M, MC), MR), kc_max);   // shared by all threads
+    float* Bp = alloc_matrix(round_up(std::min(N, NC), NR), kc_max);
+    if (!Ap || !Bp) { free_matrix(Ap); free_matrix(Bp); return; }
+
+    #pragma omp parallel
+    {
+        // Every thread runs these outer loops in lockstep (same bounds); work is
+        // divided only at the `omp for` loops inside.
+        for (int jc = 0; jc < N; jc += NC) {
+            const int nc = std::min(NC, N - jc);
+            for (int pc = 0; pc < K; pc += KC) {
+                const int kc = std::min(KC, K - pc);
+
+                // Pack B in parallel: each thread packs whole NR-wide panels.
+                #pragma omp for schedule(static)
+                for (int jr = 0; jr < nc; jr += NR)
+                    pack_B(B + pc * ldb + jc + jr, ldb, kc, std::min(NR, nc - jr), Bp + (jr / NR) * kc * NR);
+                // implicit barrier: Bp complete before anyone computes
+
+                for (int ic = 0; ic < M; ic += MC) {
+                    const int mc = std::min(MC, M - ic);
+
+                    #pragma omp for schedule(static)
+                    for (int ir = 0; ir < mc; ir += MR)
+                        pack_A(A + (ic + ir) * lda + pc, lda, std::min(MR, mc - ir), kc, Ap + (ir / MR) * kc * MR);
+                    // implicit barrier: Ap complete
+
+                    #pragma omp for schedule(static)
+                    for (int jr = 0; jr < nc; jr += NR) {
+                        const int n = std::min(NR, nc - jr);
+                        const float* Bpanel = Bp + (jr / NR) * kc * NR;
+                        for (int ir = 0; ir < mc; ir += MR) {
+                            const int m = std::min(MR, mc - ir);
+                            const float* Apanel = Ap + (ir / MR) * kc * MR;
+                            float* Ct = C + (ic + ir) * ldc + (jc + jr);
+                            if (m == MR && n == NR) micro_kernel(kc, Apanel, Bpanel, Ct, ldc);
+                            else                    micro_kernel_edge(kc, Apanel, Bpanel, Ct, ldc, m, n);
+                        }
+                    }
+                    // implicit barrier: nobody repacks Ap (next ic) or Bp (next pc) while it's being read
+                }
+            }
+        }
+    }
+    free_matrix(Ap);
+    free_matrix(Bp);
+}
+#endif

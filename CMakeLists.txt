@@ -13,6 +13,7 @@ endif()
 option(GEMM_NATIVE "Tune for the build machine's CPU (-march=native / -mcpu=native)" ON)
 set(GEMM_SANITIZER "" CACHE STRING "Sanitizer to build with: '', 'address', or 'undefined'")
 option(GEMM_USE_BLAS "Build the vendor-BLAS reference kernel if a BLAS is found" ON)
+option(GEMM_USE_OPENMP "Build the multithreaded kernel if OpenMP is found (macOS: brew install libomp)" ON)
 option(GEMM_VECTORIZE "Allow compiler auto-vectorization (OFF = experiment: isolate loop-order gains from SIMD)" ON)
 
 # ---- flags applied to every target -------------------------------------------
@@ -53,6 +54,25 @@ add_library(gemm STATIC
     src/kernels/simd.cpp
 )
 target_include_directories(gemm PUBLIC include)
+
+if(GEMM_USE_OPENMP)
+    # Apple clang has no bundled OpenMP runtime; point FindOpenMP at Homebrew's libomp.
+    if(APPLE AND NOT DEFINED OpenMP_ROOT)
+        execute_process(COMMAND brew --prefix libomp
+                        OUTPUT_VARIABLE _gemm_libomp OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+        if(_gemm_libomp AND EXISTS "${_gemm_libomp}/lib")
+            set(OpenMP_ROOT "${_gemm_libomp}")
+        endif()
+    endif()
+    find_package(OpenMP COMPONENTS CXX)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(gemm PUBLIC OpenMP::OpenMP_CXX)
+        target_compile_definitions(gemm PUBLIC GEMM_HAVE_OPENMP)
+        message(STATUS "OpenMP kernel: ON")
+    else()
+        message(STATUS "OpenMP kernel: OFF (OpenMP not found)")
+    endif()
+endif()
 
 if(GEMM_USE_BLAS)
     if(APPLE)

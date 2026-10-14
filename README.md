@@ -16,7 +16,7 @@ Matrix multiply dominates ML training and inference. Every transformer layer is 
 | 1 | `ikj` | Loop reorder so the inner loop streams B and C rows contiguously | Done ([analysis](results/stage1_ikj.md)) |
 | 2 | `blocked` | Cache blocking (tiling) with runtime block size and remainder handling | Done: [2a blocking](results/stage2_blocked.md), [2b packing](results/stage2b_packed.md) |
 | 3 | `simd` | Packed A + B, 8×12 register-blocked micro-kernel: NEON (M4) done, AVX2 (x86-64) planned | NEON done ([analysis](results/stage3_simd.md)) |
-| 4 | `omp` | OpenMP multithreading over blocks | Planned |
+| 4 | `omp` | OpenMP over B panels (jr loop); split-K for M < 8 | Done on M4 ([analysis](results/stage4_omp.md)) |
 | — | `blas` | Vendor BLAS reference ceiling (Accelerate on macOS, OpenBLAS on Linux) | Wired up |
 
 Each stage records its mechanism (one sentence: *why* it's faster) and its measured effect in `NOTES.md`.
@@ -32,7 +32,7 @@ Each stage records its mechanism (one sentence: *why* it's faster) and its measu
 | blocked (64/64/256) | 29.6 | 12.1× | [X] (slower than ikj at 1024: power-of-two set conflicts; +34% at n=1000) |
 | packed (64/64/256) | 41.9 | 17.2× | [X] (packing removes the power-of-two cliff) |
 | simd (NEON 8×12) | 115.3 | 47× | [X] (~0.2 memory ops per FMA vs 3 in Stages 1–2); ~85% of measured 135 GFLOPS core peak ([peak](results/peak_fma.md)) |
-| omp | [X] | [X]× | [X] |
+| omp (6–8 threads) | ~440 (n=2048) | ~180× | [X] (3.8× over 1 thread; ~46% of measured 8-core FMA peak) |
 | BLAS (Accelerate, AMX) | 2164 | 887× | — |
 
 Hardware (current numbers): Apple M4 Pro, single thread, 128 KB L1d / 16 MB L2 / 128 B lines; Apple clang 17, `-O3 -mcpu=native`; BLAS = Accelerate. Median of 5 reps. Final x86 numbers: [X]

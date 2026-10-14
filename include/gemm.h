@@ -36,6 +36,13 @@ void set_block_sizes(int mc, int kc, int nc);
 void matmul_simd(const float* A, const float* B, float* C,
                  int M, int N, int K, int lda, int ldb, int ldc);
 
+#ifdef GEMM_HAVE_OPENMP
+// Stage 4: simd parallelized over B panels (jr loop); M < 8 uses split-K ikj + reduction.
+// Thread count from OMP_NUM_THREADS.
+void matmul_omp(const float* A, const float* B, float* C,
+                int M, int N, int K, int lda, int ldb, int ldc);
+#endif
+
 #ifdef GEMM_HAVE_BLAS
 // Vendor BLAS (Accelerate on macOS, OpenBLAS on Linux) — the ceiling to compare against.
 void matmul_blas(const float* A, const float* B, float* C,

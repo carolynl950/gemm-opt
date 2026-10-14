@@ -254,8 +254,24 @@ edge tile). Full write-up: `results/stage3_dispatch.md`.
 
 ---
 
+## Stage 4 — OpenMP (done on M4)
+
+**Why it's faster:** splitting the `jr` loop (12-col B panels) across
+threads, with shared packed A/B and `omp for` barriers: ~115 → ~440 GFLOPS
+(3.8× at 6 threads). Flat to 8, worse with E-cores (10–12).
+
+- 8 concurrent `peak` processes = ~960 GFLOPS, so the plateau is the
+  parallel design (~46% of 8-core peak), not clocks.
+- Decode: column-split was 3× slower than serial ikj at 1 thread (strided B
+  walk defeats the prefetcher); split-K fixed it. Threads give ≤ 1.25× in
+  decode and hurt small layers.
+
+Full write-up: `results/stage4_omp.md`.
+
+---
+
 ## Next
-- CI: Ubuntu + macOS × release/asan/ubsan
 - Stage 3 x86: AVX2 micro-kernel
-- Stage 4: OpenMP; re-measure decode bandwidth wall with multiple threads
+- 2-D (ic × jr) thread grid to get past the ~440 GFLOPS plateau
+- STREAM-style multi-thread bandwidth benchmark (is ~90 GB/s per-core or chip?)
 - Counter confirmation of the set-conflict and prefetcher hypotheses
